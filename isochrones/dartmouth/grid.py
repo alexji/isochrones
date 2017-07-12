@@ -22,15 +22,18 @@ class DartmouthModelGrid(ModelGrid):
     into ``.isochrones/dartmouth`` alongside the others.  If you do 
     this, you must edit the object definition accordingly so the ``get_band``
     function returns the correct information.
+
+    ALEX ADDED: HST_WFPC2=['F555W','F606W','F814W']
     """
     name = 'dartmouth'
     common_columns = ('EEP', 'MMo', 'LogTeff', 'LogG', 'LogLLo', 'age', 'feh')
-    phot_systems = ('SDSSugriz','UBVRIJHKsKp','WISE','LSST','UKIDSS')
+    phot_systems = ('SDSSugriz','UBVRIJHKsKp','WISE','LSST','UKIDSS','HST_WFPC2')
     phot_bands = dict(SDSSugriz=['sdss_z', 'sdss_i', 'sdss_r', 'sdss_u', 'sdss_g'],
                   UBVRIJHKsKp=['B', 'I', 'H', 'J', 'Ks', 'R', 'U', 'V', 'D51', 'Kp'],
                   WISE=['W4', 'W3', 'W2', 'W1'],
                   LSST=['LSST_r', 'LSST_u', 'LSST_y', 'LSST_z', 'LSST_g', 'LSST_i'],
-                  UKIDSS=['Y', 'H', 'K', 'J', 'Z'])
+                  UKIDSS=['Y', 'H', 'K', 'J', 'Z'],
+                  HST_WFPC2=['F555W','F606W','F814W'])
 
     default_kwargs = {'afe':'afep0', 'y':''}
     datadir = os.path.join(ISOCHRONES, 'dartmouth')
@@ -60,6 +63,9 @@ class DartmouthModelGrid(ModelGrid):
             band = 'Kp'
         elif b in ['W1','W2','W3','W4']:
             phot = 'WISE'
+            band = b
+        elif b in ['F555W','F606W','F814W']:
+            phot = 'HST_WFPC2'
             band = b
         else:
             m = re.match('([a-zA-Z]+)_([a-zA-Z_]+)',b)
