@@ -23,7 +23,7 @@ class DartmouthModelGrid(ModelGrid):
     this, you must edit the object definition accordingly so the ``get_band``
     function returns the correct information.
 
-    ALEX ADDED: HST_WFPC2=['F555W','F606W','F814W']
+    APJ ADDED: HST_WFPC2=['WFPC2_F555W','WFPC2_F606W','WFPC2_F814W']
     """
     name = 'dartmouth'
     common_columns = ('EEP', 'MMo', 'LogTeff', 'LogG', 'LogLLo', 'age', 'feh')
@@ -33,7 +33,7 @@ class DartmouthModelGrid(ModelGrid):
                   WISE=['W4', 'W3', 'W2', 'W1'],
                   LSST=['LSST_r', 'LSST_u', 'LSST_y', 'LSST_z', 'LSST_g', 'LSST_i'],
                   UKIDSS=['Y', 'H', 'K', 'J', 'Z'],
-                  HST_WFPC2=['F555W','F606W','F814W'])
+                  HST_WFPC2=['WFPC2_F555W','WFPC2_F606W','WFPC2_F814W'])
 
     default_kwargs = {'afe':'afep0', 'y':''}
     datadir = os.path.join(ISOCHRONES, 'dartmouth')
@@ -66,9 +66,13 @@ class DartmouthModelGrid(ModelGrid):
             band = b
         elif b in ['F555W','F606W','F814W']:
             phot = 'HST_WFPC2'
+            band = 'WFPC2_{}'.format(b)
+        elif b in ['WFPC2_F555W','WFPC2_F606W','WFPC2_F814W']:
+            phot = 'HST_WFPC2'
             band = b
         else:
             m = re.match('([a-zA-Z]+)_([a-zA-Z_]+)',b)
+            m2= re.match('HST_([a-zA-Z\d]+)_([a-zA-Z_\d]+)',b)
             if m:
                 if m.group(1) in cls.phot_systems:
                     phot = m.group(1)
@@ -79,6 +83,12 @@ class DartmouthModelGrid(ModelGrid):
                 elif m.group(1) in ['UK','UKIRT']:
                     phot = 'UKIDSS'
                     band = m.group(2)
+            if m2:
+                _phot = "HST_{}".format(m2.group(1))
+                _band = "{}_{}".format(m2.group(1), m2.group(2))
+                if _phot in cls.phot_systems:
+                    phot = _phot
+                    band = _band
         if phot is None:
             raise ValueError('Dartmouth Models cannot resolve band {}!'.format(b))
         return phot, band
@@ -135,6 +145,14 @@ class DartmouthModelGrid(ModelGrid):
         df.loc[:,'age'] = np.log10(df.age * 1e9) # convert to log10(age)
         df = df.sort_values(by=['feh','age','MMo','EEP'])
         df.index = [df.feh, df.age]
+
+        if phot in ["HST_WFPC2"]:
+            ## APJ put this in to allow different HST with same filter names
+            cols_to_rename = []
+            for col in df.columns:
+                if col[0]=="F": cols_to_rename.append(col)
+            new_colnames = ["WFPC2_"+col for col in cols_to_rename]
+            df.rename(columns=dict(zip(cols_to_rename, new_colnames)), inplace=True)
         return df
         
     def hdf_filename(self, phot):
