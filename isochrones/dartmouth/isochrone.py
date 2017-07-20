@@ -44,7 +44,7 @@ from .grid import DartmouthModelGrid
 #TRI = None
 
 # APJ To facilitate different afe
-from tri import tri_filename
+from tri import tri_filename, write_tri
 TRI_CACHE = {}
 
 DEFAULT_BANDS = ('B','V','g','r','i','z',
@@ -69,7 +69,8 @@ class Dartmouth_Isochrone(Isochrone):
         if afe != 'afep0' and y != '':
             raise NotImplementedError('Model grids not prepared for non-solar [alpha/Fe] or y')
 
-        df = DartmouthModelGrid(bands, afe=afe, y=y).df
+        grid = DartmouthModelGrid(bands, afe=afe, y=y)
+        df = grid.df
         # df = get_grid(bands, afe=afe, y=y)
 
         global TRI_CACHE
@@ -77,11 +78,17 @@ class Dartmouth_Isochrone(Isochrone):
         key = (afe,y)
         self.afe = afe
         self.y = y
+        phot, b = grid.get_band(bands[0])
+        assert len(grid.get_filenames(phot, afe=afe, y=y)) > 0, "Invalid phot/afe/y"
 
         if key in TRI_CACHE:
             TRI = TRI_CACHE[key]
         else:
             tri_fname = tri_filename(afe=afe, y=y)
+            if not os.path.exists(tri_fname):
+                print("Creating {} file (takes a few minutes)".format(tri_fname))
+                write_tri(afe=afe, y=y)
+
             try:
                 f = open(tri_fname,'rb')
                 TRI = pickle.load(f)
