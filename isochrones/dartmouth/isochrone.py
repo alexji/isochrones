@@ -41,7 +41,11 @@ if not on_rtd:
 
 from .grid import DartmouthModelGrid
 
-TRI = None
+#TRI = None
+
+# APJ To facilitate different afe
+from tri import tri_filename
+TRI_CACHE = {}
 
 DEFAULT_BANDS = ('B','V','g','r','i','z',
                              'J','H','K',
@@ -68,16 +72,24 @@ class Dartmouth_Isochrone(Isochrone):
         df = DartmouthModelGrid(bands, afe=afe, y=y).df
         # df = get_grid(bands, afe=afe, y=y)
 
-        global TRI
+        global TRI_CACHE
 
-        if TRI is None:
+        key = (afe,y)
+        self.afe = afe
+        self.y = y
+
+        if key in TRI_CACHE:
+            TRI = TRI_CACHE[key]
+        else:
+            tri_fname = tri_filename(afe=afe, y=y)
             try:
-                f = open(TRI_FILE,'rb')
+                f = open(tri_fname,'rb')
                 TRI = pickle.load(f)
             except:
-                f = open(TRI_FILE,'rb')
+                f = open(tri_fname,'rb')
                 TRI = pickle.load(f,encoding='latin-1')
             finally:
+                TRI_CACHE[key] = TRI
                 f.close()
 
         
