@@ -24,6 +24,7 @@ class DartmouthModelGrid(ModelGrid):
     function returns the correct information.
 
     APJ ADDED: HST_WFPC2=['WFPC2_F555W','WFPC2_F606W','WFPC2_F814W']
+    APJ ADDED: HST_ACSWF=['ACSWF_F555W','ACSWF_F606W','ACSWF_F814W']
     """
     name = 'dartmouth'
     common_columns = ('EEP', 'MMo', 'LogTeff', 'LogG', 'LogLLo', 'age', 'feh')
@@ -33,7 +34,8 @@ class DartmouthModelGrid(ModelGrid):
                   WISE=['W4', 'W3', 'W2', 'W1'],
                   LSST=['LSST_r', 'LSST_u', 'LSST_y', 'LSST_z', 'LSST_g', 'LSST_i'],
                   UKIDSS=['Y', 'H', 'K', 'J', 'Z'],
-                  HST_WFPC2=['WFPC2_F555W','WFPC2_F606W','WFPC2_F814W'])
+                  HST_WFPC2=['WFPC2_F555W','WFPC2_F606W','WFPC2_F814W'],
+                  HST_ACSWF=['ACSWF_F555W','ACSWF_F606W','ACSWF_F814W'])
 
     default_kwargs = {'afe':'afep0', 'y':''}
     datadir = os.path.join(ISOCHRONES, 'dartmouth')
@@ -69,6 +71,9 @@ class DartmouthModelGrid(ModelGrid):
             band = 'WFPC2_{}'.format(b)
         elif b in ['WFPC2_F555W','WFPC2_F606W','WFPC2_F814W']:
             phot = 'HST_WFPC2'
+            band = b
+        elif b in ['ACSWF_F555W','ACSWF_F606W','ACSWF_F814W']:
+            phot = 'HST_ACSWF'
             band = b
         else:
             m = re.match('([a-zA-Z]+)_([a-zA-Z_]+)',b)
@@ -146,12 +151,13 @@ class DartmouthModelGrid(ModelGrid):
         df = df.sort_values(by=['feh','age','MMo','EEP'])
         df.index = [df.feh, df.age]
 
-        if phot in ["HST_WFPC2"]:
+        if phot in ["HST_WFPC2","HST_ACSWF"]:
             ## APJ put this in to allow different HST with same filter names
+            hsttype = phot.split("_")[1]
             cols_to_rename = []
             for col in df.columns:
                 if col[0]=="F": cols_to_rename.append(col)
-            new_colnames = ["WFPC2_"+col for col in cols_to_rename]
+            new_colnames = [hsttype+"_"+col for col in cols_to_rename]
             df.rename(columns=dict(zip(cols_to_rename, new_colnames)), inplace=True)
         return df
         
