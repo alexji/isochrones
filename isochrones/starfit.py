@@ -32,7 +32,8 @@ def initLogging(filename, logger):
 
 def starfit(folder, multiplicities=['single'], models='mist',
             use_emcee=False, plot_only=False, overwrite=False, verbose=False,
-            logger=None, starmodel_type=None, ini_file='star.ini'):
+            logger=None, starmodel_type=None, ini_file='star.ini',
+            no_plots=False, **kwargs):
     """ Runs starfit routine for a given folder.
     """
     nstars = {'single':1,
@@ -61,27 +62,29 @@ def starfit(folder, multiplicities=['single'], models='mist',
             start = time.time()
             if plot_only:
                 try:
-                    mod = Mod.load_hdf('{}/{}'.format(folder,model_filename), 
+                    mod = Mod.load_hdf('{}/{}'.format(folder,model_filename),
                                            name=name)
                 except:
                     pass
             else:
                 # Only try to fit model if it doesn't exist, unless overwrite is set
                 fit_model = True
-                
+
                 try:
-                    mod = Mod.load_hdf('{}/{}'.format(folder,model_filename), 
+                    mod = Mod.load_hdf('{}/{}'.format(folder,model_filename),
                                          name=name)
                     fit_model = False
                 except:
-                    pass
+                    filename = '{}/{}'.format(folder,model_filename)
+                    if os.path.exists(filename):
+                        os.remove(filename)
 
                 if fit_model or overwrite:
                     ini_file_path = os.path.join(folder, ini_file)
                     c = ConfigObj(ini_file_path)
 
                     if ichrone is None:
-                        bands = StarModel.get_bands(ini_file)
+                        bands = StarModel.get_bands(ini_file_path)
                         ichrone = get_ichrone(models, bands)
 
                     N = nstars[mult] if 'N' not in c else None
@@ -92,16 +95,19 @@ def starfit(folder, multiplicities=['single'], models='mist',
                     except:
                         pass
 
-                    mod.fit(verbose=verbose, overwrite=overwrite)
-                    mod.save_hdf(os.path.join(folder, model_filename))
+                    # # Prime the jit call signature?
+                    # ichrone.mag['J'](1.0, 9.7, 0.1, 1000, 0.4)
+
+                    mod.fit(verbose=verbose, overwrite=overwrite, **kwargs)
+                    mod.save_hdf(os.path.join(folder, model_filename), overwrite=overwrite)
                 else:
                     logger.info('{} exists.  Use -o to overwrite.'.format(model_filename))
 
-            # Only make corner plots if they are older 
+            # Only make corner plots if they are older
             #  than the starmodel hdf file
             make_corners = False
             for x in ['physical', 'observed']:
-                f = os.path.join(folder, 
+                f = os.path.join(folder,
                                  '{}_corner_{}_{}.png'.format(models, mult, x))
                 if not os.path.exists(f):
                     make_corners = True
@@ -112,7 +118,7 @@ def starfit(folder, multiplicities=['single'], models='mist',
                     if t_mod > t_plot:
                         make_corners=True
 
-            if make_corners or plot_only:
+            if (make_corners or plot_only) and not no_plots:
                 corner_base = os.path.join(folder, '{}_corner_{}'.format(models, mult))
                 fig1,fig2 = mod.corner_plots(corner_base)
 
@@ -131,7 +137,7 @@ def starfit(folder, multiplicities=['single'], models='mist',
             if make_magplot:
                 fig = mod.mag_plot()
                 plt.savefig(os.path.join(folder,'{}_mags_{}.png'.format(models, mult)))
-                
+
             end = time.time()
             if plot_only:
                 logger.info('{} starfit successful (plots only) for '.format(mult) +
@@ -145,9 +151,5 @@ def starfit(folder, multiplicities=['single'], models='mist',
         except:
             logger.error('{} starfit calculation failed for {}.'.format(mult,folder),
                          exc_info=True)
-
-    # Don't know why this is necessary?  Haven't been able to track down where file gets left open.
-    # But this is necessary to avoid building up of open files.
-    tables.file._open_files.close_all()
 
     return mod, logger

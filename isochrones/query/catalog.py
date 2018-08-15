@@ -3,13 +3,13 @@ import numpy as np
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 
-
 class Catalog(object):
-    """ Base class for 
+    """ Base class for results from catalog queries
     """
-    def __init__(self, query, cache=False):
+    _distance_column = '_r'
+
+    def __init__(self, query):
         self.query = query
-        self.cache = cache
         self._table = None
         self._query_coords = None
         self._coords = None
@@ -26,7 +26,7 @@ class Catalog(object):
         if self._coords is None:
             self._run_query()
         return self._coords
-    
+
 
     @property
     def query_coords(self):
@@ -43,19 +43,19 @@ class Catalog(object):
         if self._table is None:
             self._run_query()
         return self._table
-    
+
     @property
     def df(self):
         return pd.DataFrame(np.array(self.table))
-    
+
     @property
     def closest(self):
-        df = self.df.sort_values(by='_r')
+        df = self.df.sort_values(by=self._distance_column)
         return df.iloc[0]
 
     @property
     def brightest(self):
-        band = self.bands.keys()[0]
+        band = list(self.bands.keys())[0]
         df = self.df.sort_values(by=band)
         return df.iloc[0]
 
@@ -82,7 +82,7 @@ class Catalog(object):
             convert = False
 
         if convert:
-            bands = self.conversions 
+            bands = self.conversions
         else:
             bands = self.bands.keys()
 
@@ -96,4 +96,4 @@ class Catalog(object):
                 mag, dmag = row[b], row['e_{}'.format(b)]
 
             d[key] = mag, max(dmag, min_unc)
-        return d        
+        return d

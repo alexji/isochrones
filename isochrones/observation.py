@@ -66,6 +66,15 @@ class NodeTraversal(Traversal):
                     if node.label in root.limits:
                         for k,v in root.limits[node.label].items():
                             text += ', {} limits={}'.format(k,v)
+                if hasattr(root, 'parallax'):
+                    if node.index in root.parallax:
+                        # Warning, this not tested; may break ->
+                        plx, u_plx = root.parallax[node.index]
+                        text += ', parallax={}'.format((plx, u_plx))
+                        modval = node.evaluate(self.pars[node.label], 'parallax')
+                        lnl = -0.5*(modval - plx)**2/u_plx**2
+                        text += '; model={} ({})'.format(modval, lnl)
+
                 text += ': {}'.format(self.pars[node.label])
 
         else:
@@ -75,6 +84,8 @@ class NodeTraversal(Traversal):
                     if node.label in root.spectroscopy:
                         for k,v in root.spectroscopy[node.label].items():
                             text += ', {}={}'.format(k,v)
+                    if node.index in root.parallax:
+                        text += ', parallax={}'.format(root.parallax[node.index])
                     if node.label in root.limits:
                         for k,v in root.limits[node.label].items():
                             text += ', {} limits={}'.format(k,v)
@@ -334,20 +345,6 @@ class ObsNode(Node):
         """Coordinate distance from another ObsNode
         """
         return distance((self.separation, self.pa), (other.separation, other.pa))
-
-        r0, pa0 = (self.separation, self.pa)
-        #logging.debug('r0={}, pa0={} (from {})'.format(r0, pa0, self))
-        ra0 = r0*np.sin(pa0*np.pi/180)
-        dec0 = r0*np.cos(pa0*np.pi/180)
-
-        r1, pa1 = (other.separation, other.pa)
-        #logging.debug('r1={}, pa1={} (from {})'.format(r0, pa0, other))
-        ra1 = r1*np.sin(pa1*np.pi/180)
-        dec1 = r1*np.cos(pa1*np.pi/180)
-
-        dra = (ra1 - ra0)
-        ddec = (dec1 - dec0)
-        return np.sqrt(dra**2 + ddec**2)
 
     def _in_same_observation(self, other):
         return self.instrument==other.instrument and self.band==other.band
@@ -1263,4 +1260,3 @@ class ObservationTree(Node):
     @classmethod
     def synthetic(cls, stars, surveys):
         pass
-

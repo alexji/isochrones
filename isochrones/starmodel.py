@@ -86,12 +86,14 @@ class StarModel(object):
                   'logg','Teff','feh','density', 'separation',
                  'PA','resolution','relative','N','index', 'id')
 
+    _default_name = 'single'
+
     def __init__(self, ic, obs=None, N=1, index=0,
                  name='', use_emcee=False,
                  RA=None, dec=None, coords=None,
                  **kwargs):
 
-        self.name = name
+        self.name = name if name else self._default_name
 
         if coords is None:
             if RA is not None and dec is not None:
@@ -131,12 +133,15 @@ class StarModel(object):
         self._bounds = {'mass':None,
                         'feh':None,
                         'age':None,
-                        'q':(0.1,1.0),
-                        'distance':(0,3000.),
-                        'AV':(0,1.)}
+                        'q':q_prior.bounds,
+                        'distance':distance_prior.bounds,
+                        'AV':AV_prior.bounds}
 
         if 'maxAV' in kwargs:
             self.set_bounds(AV=(0, kwargs['maxAV']))
+
+        if 'max_distance' in kwargs:
+            self.set_bounds(distance=(0, kwargs['max_distance']))
 
         self._directory = '.'
         self._samples = None
@@ -323,6 +328,8 @@ class StarModel(object):
                     # For each band and each star, create a row
                     for b in bands:
                         for tag in tags:
+                            if '{}{}'.format(b, tag) not in c[k]:
+                                continue
                             row = {}
                             row['name'] = instrument
                             row['band'] = b
@@ -378,12 +385,17 @@ class StarModel(object):
         if self._bounds[prop] is not None:
             return self._bounds[prop]
         elif prop=='mass':
-            self._bounds['mass'] = (self.ic.minmass,
-                                    self.ic.maxmass)
+            lo, hi = (self.ic.minmass, self.ic.maxmass)
+            self._bounds['mass'] = (lo, hi)
+            self._priors['mass'].bounds = (lo, hi)
         elif prop=='feh':
-            self._bounds['feh'] = (self.ic.minfeh,
-                                   self.ic.maxfeh)
+            lo, hi = (self.ic.minfeh, self.ic.maxfeh)
+            self._bounds['feh'] = (lo, hi)
+            self._priors['feh'].bounds = (lo, hi)
         elif prop=='age':
+            lo, hi = (self.ic.minage, self.ic.maxage)
+            self._bounds['age'] = (lo, hi)
+            self._priors['age'].bounds = (lo, hi)
             self._bounds['age'] = (self.ic.minage,
                                    self.ic.maxage)
         else:
@@ -395,6 +407,7 @@ class StarModel(object):
             if len(v) != 2:
                 raise ValueError('Must provide (min, max)')
             self._bounds[k] = v
+            self._priors[k].bounds = v
 
     def _build_obs(self, **kwargs):
         """
@@ -411,7 +424,8 @@ class StarModel(object):
             if k in self.ic.bands:
                 if np.size(v) != 2:
                     logging.warning('{}={} ignored.'.format(k,v))
-                    continue
+                    # continue
+                    v = [v, np.nan]
                 o = Observation('', k, 99) #bogus resolution=99
                 s = Source(v[0], v[1])
                 o.add_source(s)
@@ -430,10 +444,24 @@ class StarModel(object):
             elif k in ['Teff','logg','feh']:
                 par = {k:v}
                 self.obs.add_spectroscopy(**par)
+            elif re.search('_', k):
+                m = re.search('^(\w+)_(\w+)$', k)
+                prop = m.group(1)
+                tag = m.group(2)
+                self.obs.add_spectroscopy(**{prop:v, 'label':'0_{}'.format(tag)})
+
 
     @property
     def param_description(self):
         return self.obs.param_description
+
+    @property
+    def param_names(self):
+        return self.param_description
+
+    @property
+    def mags(self):
+        return {n.band : n.value[0] for n in self.obs.get_obs_nodes()}
 
     def lnpost(self, p, **kwargs):
         lnpr = self.lnprior(p)
@@ -456,8 +484,7 @@ class StarModel(object):
                 lo,hi = self.bounds(prop)
                 if val < lo or val > hi:
                     return -np.inf
-                lnp += np.log(self.prior(prop, val,
-                                  bounds=self.bounds(prop)))
+                lnp += np.log(self.prior(prop, val))
                 if not np.isfinite(lnp):
                     logging.debug('lnp=-inf for {}={} (system {})'.format(prop,val,s))
                     return -np.inf
@@ -468,8 +495,7 @@ class StarModel(object):
             masses = p[i:i+N[s]]
 
             # Mass prior for primary
-            lnp += np.log(self.prior('mass', masses[0],
-                                bounds=self.bounds('mass')))
+            lnp += np.log(self.prior('mass', masses[0]))
             if not np.isfinite(lnp):
                 logging.debug('lnp=-inf for mass={} (system {})'.format(masses[0],s))
 
@@ -482,8 +508,7 @@ class StarModel(object):
                 #if j+1 > 1:
                 #    qmax = masses[j] / masses[0]
 
-                lnp += np.log(self.prior('q', q,
-                                         bounds=(qmin,qmax)))
+                lnp += np.log(self.prior('q', q))
                 if not np.isfinite(lnp):
                     logging.debug('lnp=-inf for q={} (system {})'.format(q,s))
                     return -np.inf
@@ -697,20 +722,51 @@ class StarModel(object):
         fit = scipy.optimize.minimize(fn, p0, **kwargs)
         return fit
 
+    def sample_from_prior(self, n):
+        return self.emcee_p0(n)
+
     def emcee_p0(self, nwalkers):
+
+        def sample_row(nstars, n=nwalkers):
+            p = []
+            m0 = self._priors['mass'].sample(n)
+            age0 = self._priors['age'].sample(n)
+            feh0 = self._priors['feh'].sample(n)
+            d0 = self._priors['distance'].sample(n)
+            AV0 = self._priors['AV'].sample(n)
+
+            for i in range(nstars):
+                p += [m0 * 0.95**i]
+            p += [age0, feh0, d0, AV0]
+            return p
+
         p0 = []
         for _,n in self.obs.Nstars.items():
-            m0, age0, feh0 = self.ic.random_points(nwalkers)
-            _, max_distance = self.bounds('distance')
-            _, max_AV = self.bounds('AV')
-            d0 = 10**(rand.uniform(0,np.log10(max_distance),size=nwalkers))
-            AV0 = rand.uniform(0, max_AV, size=nwalkers)
+            p0 += sample_row(n)
 
-            # This will occasionally give masses outside range.
-            for i in range(n):
-                p0 += [m0 * 0.95**i]
-            p0 += [age0, feh0, d0, AV0]
-        return np.array(p0).T
+        p0 = np.array(p0).T
+
+        nbad = 1
+
+        while True:
+            ibad = []
+            for i, p in enumerate(p0):
+                if not np.isfinite(self.lnpost(p)):
+                    ibad.append(i)
+
+            nbad = len(ibad)
+            if nbad == 0:
+                break
+
+            pnew = []
+            for _, n in self.obs.Nstars.items():
+                pnew += sample_row(n, n=nbad)
+
+            pnew = np.array(pnew).T
+
+            p0[ibad, :] = pnew
+
+        return p0
 
     def fit_mcmc(self,nwalkers=300,nburn=200,niter=100,
                  p0=None,initial_burn=None,
@@ -937,6 +993,9 @@ class StarModel(object):
         fig2.savefig(basename + '_observed.png')
         return fig1, fig2
 
+    def triangle_plots(self, *args, **kwargs):
+        return self.corner_plots(*args, **kwargs)
+
     def corner_physical(self, props=['mass','radius','feh','age','distance','AV'], **kwargs):
         collective_props = ['feh','age','distance','AV']
         indiv_props = [p for p in props if p not in collective_props]
@@ -1011,15 +1070,12 @@ class StarModel(object):
             within the file will be updated.
         """
         if os.path.exists(filename):
-            store = pd.HDFStore(filename)
-            if path in store:
-                store.close()
-                if overwrite:
-                    os.remove(filename)
-                elif not append:
-                    raise IOError('{} in {} exists.  Set either overwrite or append option.'.format(path,filename))
-                else:
-                    store.close()
+            with pd.HDFStore(filename) as store:
+                if path in store:
+                    if overwrite:
+                        os.remove(filename)
+                    elif not append:
+                        raise IOError('{} in {} exists.  Set either overwrite or append option.'.format(path,filename))
 
         if self.samples is not None:
             self.samples.to_hdf(filename, path+'/samples')
@@ -1035,7 +1091,8 @@ class StarModel(object):
             attrs.ic_type = type(self.ic)
             attrs.ic_bands = list(self.ic.bands)
             attrs.use_emcee = self.use_emcee
-            attrs._mnest_basename = self._mnest_basename
+            if hasattr(self, '_mnest_basename'):
+                attrs._mnest_basename = self._mnest_basename
 
             attrs._bounds = self._bounds
             attrs._priors = self._priors
@@ -1059,6 +1116,8 @@ class StarModel(object):
         :return:
             :class:`StarModel` object.
         """
+        if not os.path.exists(filename):
+            raise IOError('{} does not exist.'.format(filename))
         store = pd.HDFStore(filename)
         try:
             samples = store[path+'/samples']
@@ -1073,7 +1132,11 @@ class StarModel(object):
             ic = attrs.ic_type
 
         use_emcee = attrs.use_emcee
-        basename = attrs._mnest_basename
+        mnest = True
+        try:
+            basename = attrs._mnest_basename
+        except AttributeError:
+            mnest = False
         bounds = attrs._bounds
         priors = attrs._priors
 
@@ -1090,9 +1153,32 @@ class StarModel(object):
         mod = cls(ic, obs=obs,
                   use_emcee=use_emcee, name=name)
         mod._samples = samples
-        mod._mnest_basename = basename
+        if mnest:
+            mod._mnest_basename = basename
         mod._directory = os.path.dirname(filename)
         return mod
+
+class BinaryStarModel(StarModel):
+    _default_name = 'binary'
+    def __init__(self, *args, **kwargs):
+        kwargs['N'] = 2
+        super(BinaryStarModel, self).__init__(*args, **kwargs)
+
+    @classmethod
+    def from_ini(cls, *args, **kwargs):
+        kwargs['N'] = 2
+        return super(BinaryStarModel, cls).from_ini(*args, **kwargs)
+
+class TripleStarModel(StarModel):
+    _default_name = 'triple'
+    def __init__(self, *args, **kwargs):
+        kwargs['N'] = 3
+        super(TripleStarModel, self).__init__(*args, **kwargs)
+
+    @classmethod
+    def from_ini(cls, *args, **kwargs):
+        kwargs['N'] = 3
+        return super(TripleStarModel, cls).from_ini(*args, **kwargs)
 
 class StarModelGroup(object):
     """A collection of StarModel objects with different model node specifications

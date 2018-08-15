@@ -1,10 +1,13 @@
 import os, glob
 import numpy as np
 import tempfile
+import tables as tb
+
 
 from isochrones.dartmouth import Dartmouth_Isochrone
 from isochrones.mist import MIST_Isochrone
 from isochrones import StarModel
+from isochrones.starfit import starfit
 
 mnest = True
 try:
@@ -26,15 +29,39 @@ def test_fitting():
     _check_saving(mod_dar)
     _check_saving(mod_mist)
 
+def test_starfit():
+    rootdir = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+    testdir = os.path.join(rootdir, 'star1')
+    if mnest:
+        basename = '{}/{}-'.format(chainsdir,np.random.randint(1000000))
+        kwargs = dict(n_live_points=20, max_iter=100,basename=basename,
+                      verbose=False)
+    else:
+        kwargs = dict(nburn=20, niter=20, ninitial=10)
+
+    mod, _ = starfit(testdir, overwrite=True, use_emcee=not mnest,
+                     no_plots=True, **kwargs)
+
+    mod.samples
+
+    if mnest:
+        files = glob.glob('{}*'.format(basename))
+        for f in files:
+            os.remove(f)
+
 ###############
 
 def _check_saving(mod):
     filename = os.path.join(chainsdir, '{}.h5'.format(np.random.randint(1000000)))
     mod.save_hdf(filename)
+    assert len(tb.file._open_files.get_handlers_by_name(filename)) == 0
+
     newmod = StarModel.load_hdf(filename)
+    assert len(tb.file._open_files.get_handlers_by_name(filename)) == 0
 
     assert np.allclose(mod.samples, newmod.samples)
     assert mod.ic.bands == newmod.ic.bands
+
 
     os.remove(filename)
 
